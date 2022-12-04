@@ -2,6 +2,10 @@
 """
     f-engrave G-Code Generator
     
+    Credit for f-engrave goes to Scorch and the below.
+    Headless adaptation with additional command line options can be
+    blamed on yeltrow.
+    
     Copyright (C) <2011-2021>  <Scorch>
     Source was used from the following works:
               engrave-11.py G-Code Generator -- Lawrence Glaister --
@@ -1902,6 +1906,8 @@ class Application(Frame):
         self.master.bind('<Control-s>', self.KEY_CTRL_S)
 
         self.batch      = BooleanVar()
+		# yeltrow added writefiles to data structure
+        self.writefiles = BooleanVar()
         self.show_axis  = BooleanVar()
         self.show_box   = BooleanVar()
         self.show_v_path= BooleanVar()
@@ -2159,7 +2165,10 @@ class Application(Frame):
 
         opts, args = None, None
         try:
-            opts, args = getopt.getopt(sys.argv[1:], "hbg:f:d:t:",["help","batch","gcode_file","fontdir=","defdir=","text="])
+            #yeltrow Added option to write files out to image source path
+            #Need to add long option name
+            opts, args = getopt.getopt(sys.argv[1:], "hbwg:f:d:t:",["help","batch","write_files","gcode_file","fontdir=","defdir=","text="])
+            #opts, args = getopt.getopt(sys.argv[1:], "hbg:f:d:t:",["help","batch","gcode_file","fontdir=","defdir=","text="])
         except:
             fmessage('Unable interpret command line options')
             sys.exit()
@@ -2172,6 +2181,8 @@ class Application(Frame):
                 fmessage('-d    : default directory (also --defdir)')
                 fmessage('-t    : engrave text (also --text)')
                 fmessage('-b    : batch mode (also --batch)')
+                # yeltrow added help for -w option
+                fmessage('-w    : write files (--writefiles) instead of stdout requires -f and -b')
                 fmessage('-h    : print this help (also --help)\n')
                 sys.exit()
             if option in ('-g','--gcode_file'):
@@ -2208,6 +2219,11 @@ class Application(Frame):
             if option in ('-b','--batch'):
                 self.batch.set(1)
 
+            #yeltrow Added option -w here
+            if option in ('-w','--writefiles'):
+                self.writefiles.set(1)                
+            
+
         if self.batch.get():
             fmessage('(F-Engrave Batch Mode)')
 
@@ -2217,15 +2233,44 @@ class Application(Frame):
                 self.Read_image_file()
 
             self.DoIt()
+            # yeltrow It appears that I could do the Clean_Path_Calc and Write_Cleanup here and that would
+            # create the other files - A lot of the states are stored in the self object as quasi global vars
+            
             if self.cut_type.get() == "v-carve":
                 self.V_Carve_It()
             self.WriteGCode()
 
-            for line in self.gcode:
-                try:
-                    sys.stdout.write(line+'\n')
-                except:
-                    sys.stdout.write('(skipping line)\n')
+            # yeltrow SECTION FOR WRITING OUT CLEANUP CODE IN BATCH MODE
+            if self.writefiles.get():
+                sys.stdout.write('(-w given.  Writing out cleanup files.)\n')
+                #clean_cut = 1
+                #self.V_Carve_It(clean_cut)
+                bit_type="v-bit"
+                
+                if (dirname != ""):
+                   filenameroot=dirname+"/"
+                else:
+                   filenameroot=""
+                sys.stdout.write('(cut.ngc contains '+str(len(self.gcode))+ ' lines.)\n')   
+                self.write_gcode_out((filenameroot+"cut.ngc"))
+                self.Clean_Path_Calc("straight")
+                self.WRITE_CLEAN_UP("straight")
+                sys.stdout.write('(cut_clean.ngc contains '+str(len(self.gcode))+ ' lines.)\n')   
+                self.write_gcode_out((filenameroot+"cut_clean.ngc"))
+                self.Clean_Path_Calc("v-bit")
+                self.WRITE_CLEAN_UP("v-bit")
+                sys.stdout.write('(cut_v_clean.ngc contains '+str(len(self.gcode))+ ' lines.)\n')   
+                self.write_gcode_out((filenameroot+"cut_v_clean.ngc"))
+           
+            # yeltrow Changed the below so it only executes to stdout if we
+            # are NOT using the -w option to force writing cleanup and v-carve 
+            # code.
+            else:
+                for line in self.gcode:
+                    try:
+                        sys.stdout.write(line+'\n')
+                    except:
+                        sys.stdout.write('(skipping line)\n')
             sys.exit()
 
         ##########################################################################
@@ -5125,6 +5170,25 @@ class Application(Frame):
             self.statusMessage.set("File Saved: %s" %(filename))
             self.statusbar.configure( bg = 'white' )
 
+    # yeltrow write_gcode_out takes the contents of self.gcode[] and saves it to a file
+    # Used repeatedly for batch mode.  Little error checking...
+    def write_gcode_out(self, filename):
+        if filename != '' and filename != ():
+            self.NGC_FILE = filename
+            try:
+                fout = open(filename,'w')
+            except:
+                pass
+                return
+            for line in self.gcode:
+                try:
+                    fout.write(line+'\n')
+                except:
+                    fout.write('(skipping line)\n')
+            fout.close()
+        pass
+    # MRW end of write_gcode_out
+
 
     def menu_File_Save_clean_G_Code_File(self, bit_type="straight"):
         if (self.Check_All_Variables() > 0):
@@ -7836,11 +7900,14 @@ class Application(Frame):
             test_clean = self.v_clean_P.get() + self.v_clean_Y.get() + self.v_clean_X.get() + self.v_clean_L.get()
 
         rbit = self.calc_vbit_dia() / 2.0
-        
-        self.statusbar.configure( bg = 'yellow' )
+        # yeltrow skip statusbar when in batch mode to allow headless
+        if (not self.batch.get()):
+            self.statusbar.configure( bg = 'yellow' )
         if bit_type=="straight":
-            self.statusMessage.set('Calculating Cleanup Cut Paths')
-            self.master.update()
+	        # yeltrow skip statusbar when in batch mode to allow headless
+            if (not self.batch.get()):
+                self.statusMessage.set('Calculating Cleanup Cut Paths')
+                self.master.update()
             clean_dia = float(self.clean_dia.get()) #diameter of cleanup bit 
             v_step_len = float(self.v_step_len.get()) 
             step_over = float(self.clean_step.get()) #percent of cut DIA
@@ -7848,10 +7915,14 @@ class Application(Frame):
             Radjust   = clean_dia/2.0 + rbit
 
         elif bit_type == "v-bit":
-            self.statusMessage.set('Calculating V-Bit Cleanup Cut Paths')
+	        # yeltrow skip statusbar when in batch mode to allow headless
+            if (not self.batch.get()):
+                self.statusMessage.set('Calculating V-Bit Cleanup Cut Paths')
             skip = 1
             clean_step = 1.0
-            self.master.update()
+   	        # yeltrow skip statusbar when in batch mode to allow headless
+            if (not self.batch.get()):
+                self.master.update()
             clean_dia  = float(self.clean_v.get())  #effective diameter of clean-up v-bit
             if float(clean_dia) < Zero:
                 return
@@ -8094,19 +8165,22 @@ class Application(Frame):
                 if len(clean_coords_out)>0:
                     MaxLoop = clean_coords_out[-1][3]
             ###########################################################
-                        
-            self.entry_set(self.Entry_CLEAN_DIA, self.Entry_CLEAN_DIA_Check()     ,1)
-            self.entry_set(self.Entry_STEP_OVER, self.Entry_STEP_OVER_Check()     ,1)
-            self.entry_set(self.Entry_V_CLEAN,     self.Entry_V_CLEAN_Check()     ,1)
+            # yeltrow remove GUI dependencies
+            if (not self.batch.get()):              
+                self.entry_set(self.Entry_CLEAN_DIA, self.Entry_CLEAN_DIA_Check()     ,1)
+                self.entry_set(self.Entry_STEP_OVER, self.Entry_STEP_OVER_Check()     ,1)
+                self.entry_set(self.Entry_V_CLEAN,     self.Entry_V_CLEAN_Check()     ,1)
 
             if bit_type=="v-bit":
                 self.v_clean_coords_sort = clean_coords_out
             else:
                 self.clean_coords_sort = clean_coords_out
-        self.statusMessage.set('Done Calculating Cleanup Cut Paths')
-        self.statusbar.configure( bg = 'white' )
-        self.master.update_idletasks()
-    #######################################
+        # yeltrow remove GUI dependencies
+        if (not self.batch.get()):              
+            self.statusMessage.set('Done Calculating Cleanup Cut Paths')
+            self.statusbar.configure( bg = 'white' )
+            self.master.update_idletasks()
+		#######################################
     #End Reorganize                       #
     #######################################                
 
