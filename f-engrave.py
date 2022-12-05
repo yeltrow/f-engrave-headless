@@ -2109,6 +2109,8 @@ class Application(Frame):
         self.HOME_DIR     =  os.path.expanduser("~")
         self.NGC_FILE     = (self.HOME_DIR+"/None")
         self.IMAGE_FILE   = (self.HOME_DIR+"/None")
+        # yeltrow Added default value for prefix here
+        self.writefile_prefix=''
         self.current_input_file.set(" ")
         self.bounding_box.set(" ")
 
@@ -2167,7 +2169,7 @@ class Application(Frame):
         try:
             #yeltrow Added option to write files out to image source path
             #Need to add long option name
-            opts, args = getopt.getopt(sys.argv[1:], "hbwg:f:d:t:",["help","batch","write_files","gcode_file","fontdir=","defdir=","text="])
+            opts, args = getopt.getopt(sys.argv[1:], "hbwg:f:d:t:p:",["help","batch","writefiles","gcode_file","fontdir=","defdir=","text=","prefix="])
             #opts, args = getopt.getopt(sys.argv[1:], "hbg:f:d:t:",["help","batch","gcode_file","fontdir=","defdir=","text="])
         except:
             fmessage('Unable interpret command line options')
@@ -2180,6 +2182,7 @@ class Application(Frame):
                 fmessage('-f    : path to font file, directory or image file (also --fontdir)')
                 fmessage('-d    : default directory (also --defdir)')
                 fmessage('-t    : engrave text (also --text)')
+                fmessage('-p    : output file prefix to preappend (also --prefix)')
                 fmessage('-b    : batch mode (also --batch)')
                 # yeltrow added help for -w option
                 fmessage('-w    : write files (--writefiles) instead of stdout requires -f and -b')
@@ -2188,6 +2191,9 @@ class Application(Frame):
             if option in ('-g','--gcode_file'):
                 self.Open_G_Code_File(value)
                 self.NGC_FILE = value
+            #yeltrow Added the -p if option stanza below
+            if option in ('-p','--prefix'):
+                self.writefile_prefix=value
             if option in ('-f','--fontdir'):
                 if os.path.isdir(value):
                     self.fontdir.set(value)
@@ -2252,15 +2258,17 @@ class Application(Frame):
                 else:
                    filenameroot=""
                 sys.stdout.write('(cut.ngc contains '+str(len(self.gcode))+ ' lines.)\n')   
-                self.write_gcode_out((filenameroot+"cut.ngc"))
+                self.write_gcode_out((filenameroot+self.writefile_prefix+"cut.ngc"))
                 self.Clean_Path_Calc("straight")
                 self.WRITE_CLEAN_UP("straight")
                 sys.stdout.write('(cut_clean.ngc contains '+str(len(self.gcode))+ ' lines.)\n')   
-                self.write_gcode_out((filenameroot+"cut_clean.ngc"))
+                self.write_gcode_out((filenameroot+self.writefile_prefix+"cut_clean.ngc"))
                 self.Clean_Path_Calc("v-bit")
                 self.WRITE_CLEAN_UP("v-bit")
                 sys.stdout.write('(cut_v_clean.ngc contains '+str(len(self.gcode))+ ' lines.)\n')   
-                self.write_gcode_out((filenameroot+"cut_v_clean.ngc"))
+                self.write_gcode_out((filenameroot+self.writefile_prefix+"cut_v_clean.ngc"))
+           
+           
            
             # yeltrow Changed the below so it only executes to stdout if we
             # are NOT using the -w option to force writing cleanup and v-carve 
